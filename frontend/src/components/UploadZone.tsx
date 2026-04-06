@@ -7,6 +7,11 @@ import type { UploadState } from '../types';
 import { BACKEND_URL } from '../types';
 import { computeFileHash, polygonscanUrl } from '../utils';
 import { useContract } from '../hooks/useContract';
+import {
+    DOCUMENT_SECTION_OPTIONS,
+    getDocumentSectionLabel,
+    type DocumentSection,
+} from '../utils/documentSections';
 
 const MAX_SIZE = 20 * 1024 * 1024;
 
@@ -19,15 +24,20 @@ interface UploadZoneProps {
 
 export function UploadZone({ signer, provider, isConnected, onUploadSuccess }: UploadZoneProps) {
     const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle' });
+    const [documentSection, setDocumentSection] = useState<DocumentSection>('property-paper');
     const { addDocument } = useContract(signer, provider);
 
     const processFile = useCallback(async (file: File) => {
+        let reservationId: string | undefined;
+
         if (!isConnected) {
             toast.error('Please connect your wallet first!');
             return;
         }
 
         try {
+            const owner = await signer!.getAddress();
+
             // 1. Hash the file client-side
             setUploadState({ status: 'hashing' });
             toast.info('⚙️ Computing SHA-256 hash...');
@@ -39,12 +49,19 @@ export function UploadZone({ signer, provider, isConnected, onUploadSuccess }: U
 
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('owner', await signer!.getAddress());
+            formData.append('owner', owner);
+            formData.append('documentSection', documentSection);
 
             const res = await fetch(`${BACKEND_URL}/upload`, { method: 'POST', body: formData });
-            const data = await res.json();
+            const data = await res.json().catch(() => ({ success: false, error: 'Upload service returned an invalid response' }));
+
+            if (!res.ok) {
+                throw new Error(data.error || `Upload failed with status ${res.status}`);
+            }
+
             if (!data.success) throw new Error(data.error || 'Upload failed');
 
+            reservationId = data.reservationId;
             const { cid, pinataUrl } = data;
             toast.success(`📌 Pinned to IPFS: ${cid.slice(0, 10)}...`);
 
@@ -58,15 +75,50 @@ export function UploadZone({ signer, provider, isConnected, onUploadSuccess }: U
 
             await tx.wait();
 
-            setUploadState({ status: 'success', txHash: tx.hash, hash, cid, pinataUrl });
+            if (reservationId) {
+                const finalizeRes = await fetch(`${BACKEND_URL}/upload/finalize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        reservationId,
+                        txHash: tx.hash,
+                        cid,
+                        owner,
+                        fileHash: hash,
+                        filename: file.name,
+                        fileType: file.type || 'application/octet-stream',
+                        fileSizeBytes: file.size,
+                        documentSection,
+                        pinataUrl,
+                        ipfsUrl: data.ipfsUrl,
+                    }),
+                });
+                const finalizeData = await finalizeRes.json().catch(() => ({ success: false, error: 'Failed to finalize duplicate protection record' }));
+                if (!finalizeRes.ok || !finalizeData.success) {
+                    toast.warning(finalizeData.error || 'Stored on-chain, but duplicate protection was not finalized');
+                }
+            }
+
+            setUploadState({ status: 'success', txHash: tx.hash, hash, cid, pinataUrl, documentSection });
             toast.success('✅ Document stored on blockchain!');
             onUploadSuccess();
         } catch (err: any) {
-            const msg = err?.reason || err?.message || 'Unknown error';
+            if (reservationId) {
+                await fetch(`${BACKEND_URL}/upload/rollback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reservationId }),
+                }).catch(() => null);
+            }
+
+            const msg =
+                err instanceof TypeError && err.message === 'Failed to fetch'
+                    ? 'Upload service is unreachable. Start the backend on http://localhost:5001 and try again.'
+                    : err?.reason || err?.message || 'Unknown error';
             setUploadState({ status: 'error', error: msg });
             toast.error(`❌ ${msg}`);
         }
-    }, [isConnected, signer, addDocument, onUploadSuccess]);
+    }, [addDocument, documentSection, isConnected, onUploadSuccess, signer]);
 
     const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
         onDrop: (accepted, rejected) => {
@@ -87,6 +139,54 @@ export function UploadZone({ signer, provider, isConnected, onUploadSuccess }: U
 
     return (
         <div>
+            <div style={{ marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
+                    <div>
+                        <span className="vault-kicker" style={{ marginBottom: '0.7rem' }}>Document Section</span>
+                        <p style={{ fontSize: '0.9rem', margin: 0 }}>
+                            Choose the section where this record should live inside the vault index.
+                        </p>
+                    </div>
+                    <span className="badge badge-cyan">{getDocumentSectionLabel(documentSection)}</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                    {DOCUMENT_SECTION_OPTIONS.map((option) => {
+                        const isSelected = documentSection === option.value;
+
+                        return (
+                            <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setDocumentSection(option.value)}
+                                disabled={isProcessing}
+                                className="glass-card"
+                                style={{
+                                    padding: '1rem',
+                                    textAlign: 'left',
+                                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                                    border: isSelected
+                                        ? '1px solid rgba(102, 233, 255, 0.48)'
+                                        : '1px solid rgba(113, 183, 255, 0.12)',
+                                    background: isSelected
+                                        ? 'linear-gradient(135deg, rgba(91, 214, 255, 0.14), rgba(100, 106, 255, 0.14))'
+                                        : undefined,
+                                    boxShadow: isSelected ? 'var(--glow-primary)' : 'none',
+                                }}
+                            >
+                                <div style={{ fontSize: '1.2rem', marginBottom: '0.55rem' }}>{option.icon}</div>
+                                <div style={{ color: 'var(--clr-text-primary)', fontWeight: 700, marginBottom: '0.3rem' }}>
+                                    {option.label}
+                                </div>
+                                <p style={{ fontSize: '0.82rem', lineHeight: 1.5, margin: 0 }}>
+                                    {option.description}
+                                </p>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             {/* Drop Zone */}
             <motion.div
                 {...(getRootProps() as any)}
@@ -156,7 +256,12 @@ export function UploadZone({ signer, provider, isConnected, onUploadSuccess }: U
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
                             <span style={{ fontSize: '1.5rem' }}>✅</span>
-                            <h3 style={{ color: 'var(--clr-success)', fontSize: '1rem' }}>Document Stored on Blockchain!</h3>
+                            <div>
+                                <h3 style={{ color: 'var(--clr-success)', fontSize: '1rem', marginBottom: '0.2rem' }}>Document Stored on Blockchain!</h3>
+                                <span className="badge badge-primary">
+                                    {getDocumentSectionLabel(uploadState.documentSection)}
+                                </span>
+                            </div>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8125rem' }}>
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>

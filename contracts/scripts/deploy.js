@@ -67,8 +67,8 @@ async function main() {
     );
     console.log("📄 Frontend deployment info saved to:", addressFile);
 
-    // Verify on Polygonscan (Mumbai/Mainnet only)
-    if (hre.network.name === "mumbai" || hre.network.name === "polygon") {
+    // Verify on Polygonscan (Amoy/Mainnet only)
+    if (hre.network.name === "amoy" || hre.network.name === "polygon") {
         console.log("\n⏳ Waiting 30s before verifying on Polygonscan...");
         await new Promise((r) => setTimeout(r, 30000));
         try {

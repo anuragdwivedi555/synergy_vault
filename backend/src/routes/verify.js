@@ -15,9 +15,25 @@ const upload = multer({
     limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-function getContract() {
+function getConfiguredContractAddress() {
+    const rawAddress = (process.env.CONTRACT_ADDRESS || "").trim();
+    if (!rawAddress || rawAddress === "0x0000000000000000000000000000000000000000") {
+        return null;
+    }
+
+    return ethers.getAddress(rawAddress.toLowerCase());
+}
+
+async function getContract() {
     const provider = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL);
-    return new ethers.Contract(process.env.CONTRACT_ADDRESS, VAULT_ABI, provider);
+    const contractAddress = getConfiguredContractAddress();
+    const code = await provider.getCode(contractAddress);
+
+    if (!code || code === "0x") {
+        return null;
+    }
+
+    return new ethers.Contract(contractAddress, VAULT_ABI, provider);
 }
 
 /**
@@ -60,16 +76,18 @@ router.post("/", upload.single("file"), async (req, res, next) => {
         // Query the blockchain
         let onChainData = { valid: false, cid: "", owner: ethers.ZeroAddress, timestamp: 0n };
 
-        if (process.env.CONTRACT_ADDRESS && process.env.CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000") {
+        if (getConfiguredContractAddress()) {
             try {
-                const contract = getContract();
-                const result = await contract.verifyDocumentView(hashHex);
-                onChainData = {
-                    valid: result.valid,
-                    cid: result.cid,
-                    owner: result.owner,
-                    timestamp: result.timestamp.toString(),
-                };
+                const contract = await getContract();
+                if (contract) {
+                    const result = await contract.verifyDocumentView(hashHex);
+                    onChainData = {
+                        valid: result.valid,
+                        cid: result.cid,
+                        owner: result.owner,
+                        timestamp: result.timestamp.toString(),
+                    };
+                }
             } catch (contractErr) {
                 console.warn("Contract query failed:", contractErr.message);
             }
@@ -98,11 +116,16 @@ router.post("/hash", express.json(), async (req, res, next) => {
         const { hash } = req.body;
         if (!hash) return res.status(400).json({ success: false, error: "hash is required" });
 
-        if (!process.env.CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS === "0x0000000000000000000000000000000000000000") {
+        const contractAddress = getConfiguredContractAddress();
+        if (!contractAddress) {
             return res.json({ success: true, valid: false, message: "Contract not configured" });
         }
 
-        const contract = getContract();
+        const contract = await getContract();
+        if (!contract) {
+            return res.json({ success: true, valid: false, message: "Contract not deployed on the configured network yet" });
+        }
+
         const result = await contract.verifyDocumentView(hash);
 
         res.json({

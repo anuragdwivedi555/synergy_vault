@@ -1,14 +1,14 @@
 {
   "name": "synergy-vault-contracts",
   "version": "1.0.0",
-  "description": "Hardhat project for SynergyVault smart contracts on Polygon Mumbai",
+  "description": "Hardhat project for SynergyVault smart contracts on Polygon Amoy",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:mumbai": "hardhat run scripts/deploy.js --network mumbai",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
     "node": "hardhat node",
-    "verify": "hardhat verify --network mumbai"
+    "verify": "hardhat verify --network amoy"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",

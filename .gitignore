@@ -1,5 +1,11 @@
 node_modules/
-# .env
+.env
+.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+!contracts/.env.example
+vision.json
 dist/
 build/
 .DS_Store

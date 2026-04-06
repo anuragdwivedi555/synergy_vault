@@ -6,22 +6,45 @@ const path = require("path");
 const uploadRoutes = require("./routes/upload");
 const verifyRoutes = require("./routes/verify");
 const documentsRoutes = require("./routes/documents");
+const { router: accessRoutes } = require("./routes/access");
 const { connectDB } = require("./services/database");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Middleware
 // ─────────────────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+const explicitAllowedOrigins = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
-    .map((o) => o.trim());
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+function isLocalDevOrigin(origin) {
+    if (!origin) return false;
+
+    try {
+        const url = new URL(origin);
+        const isHttp = url.protocol === "http:" || url.protocol === "https:";
+        const isLocalhost =
+            url.hostname === "localhost" ||
+            url.hostname === "127.0.0.1" ||
+            url.hostname === "[::1]";
+
+        return isHttp && isLocalhost;
+    } catch {
+        return false;
+    }
+}
 
 app.use(
     cors({
         origin: (origin, callback) => {
-            if (!origin || allowedOrigins.includes(origin)) {
+            if (
+                !origin ||
+                explicitAllowedOrigins.includes(origin) ||
+                isLocalDevOrigin(origin)
+            ) {
                 callback(null, true);
             } else {
                 callback(new Error(`CORS blocked: ${origin}`));
@@ -52,6 +75,7 @@ app.get("/health", (req, res) => {
 app.use("/upload", uploadRoutes);
 app.use("/verify", verifyRoutes);
 app.use("/documents", documentsRoutes);
+app.use("/access", accessRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Global error handler

@@ -1,9 +1,9 @@
 # SynergyVault 🔐
 
-> A tamper-proof, blockchain-based eVault for storing and verifying legal documents on the Polygon Mumbai Testnet. Aligned with **UN SDG-16** (Peace, Justice, and Strong Institutions).
+> A tamper-proof, blockchain-based eVault for storing and verifying legal documents on the Polygon Amoy Testnet. Aligned with **UN SDG-16** (Peace, Justice, and Strong Institutions).
 
 [![SDG-16](https://img.shields.io/badge/UN%20SDG-16-blue)]()
-[![Polygon](https://img.shields.io/badge/Blockchain-Polygon%20Mumbai-purple)]()
+[![Polygon](https://img.shields.io/badge/Blockchain-Polygon%20Amoy-purple)]()
 [![IPFS](https://img.shields.io/badge/Storage-IPFS%20%2B%20Pinata-cyan)]()
 
 ---
@@ -34,7 +34,7 @@ SynergyVault/
 - Node.js 18+
 - MetaMask browser extension
 - Pinata account (free): https://app.pinata.cloud
-- Polygon Mumbai MATIC (free faucet): https://faucet.polygon.technology
+- Polygon Amoy MATIC (free faucet): https://faucet.polygon.technology
 
 ---
 
@@ -43,13 +43,13 @@ SynergyVault/
 ```bash
 cd contracts
 npm install
-cp .env.example .env       # Fill in PRIVATE_KEY and POLYGON_MUMBAI_RPC_URL
+cp .env.example .env       # Fill in PRIVATE_KEY and POLYGON_AMOY_RPC_URL
 ```
 
-**Compile & deploy to Polygon Mumbai:**
+**Compile & deploy to Polygon Amoy:**
 ```bash
 npm run compile
-npm run deploy:mumbai
+npm run deploy:amoy
 ```
 
 **Local development (Hardhat node):**
@@ -75,7 +75,7 @@ Edit `backend/.env`:
 PORT=5000
 PINATA_JWT=your_pinata_jwt_token
 CONTRACT_ADDRESS=0x...     # From step 1
-POLYGON_RPC_URL=https://rpc-mumbai.maticvigil.com
+POLYGON_RPC_URL=https://polygon-amoy.infura.io/v3/9ee8a68f33e54ef18ac51210fb67bfbd
 # Optional:
 MONGODB_URI=mongodb+srv://...
 ```
@@ -102,8 +102,8 @@ Edit `frontend/.env`:
 ```env
 VITE_CONTRACT_ADDRESS=0x...    # From step 1
 VITE_BACKEND_URL=http://localhost:5000
-VITE_NETWORK_CHAIN_ID=80001
-VITE_POLYGONSCAN_URL=https://mumbai.polygonscan.com
+VITE_NETWORK_CHAIN_ID=80002
+VITE_POLYGONSCAN_URL=https://amoy.polygonscan.com
 ```
 
 **Start the frontend:**
@@ -117,7 +117,7 @@ Frontend runs on `http://localhost:5173`
 
 ## Smart Contract API
 
-**DocumentVault.sol** deployed on Polygon Mumbai:
+**DocumentVault.sol** deployed on Polygon Amoy:
 
 | Function | Description |
 |---|---|
@@ -157,12 +157,12 @@ cd frontend && npm run build
 # Set all env vars in Render dashboard
 ```
 
-### Smart Contract → Polygon Mumbai
+### Smart Contract → Polygon Amoy
 ```bash
 cd contracts
-npm run deploy:mumbai
+npm run deploy:amoy
 # Verify on Polygonscan:
-npx hardhat verify --network mumbai <CONTRACT_ADDRESS>
+npx hardhat verify --network amoy <CONTRACT_ADDRESS>
 ```
 
 ---
@@ -171,7 +171,7 @@ npx hardhat verify --network mumbai <CONTRACT_ADDRESS>
 
 | Layer | Technologies |
 |---|---|
-| **Blockchain** | Polygon Mumbai, Solidity 0.8.19, Hardhat |
+| **Blockchain** | Polygon Amoy, Solidity 0.8.19, Hardhat |
 | **Storage** | IPFS via Pinata |
 | **Backend** | Node.js, Express, ethers.js v6, multer, mongoose |
 | **Frontend** | React 18, Vite, TypeScript, ethers.js v6, Framer Motion |

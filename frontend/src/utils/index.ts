@@ -65,6 +65,6 @@ export function formatFileSize(bytes: number): string {
  * Generate a Polygonscan URL for a transaction or address.
  */
 export function polygonscanUrl(type: 'tx' | 'address', value: string): string {
-    const base = import.meta.env.VITE_POLYGONSCAN_URL || 'https://mumbai.polygonscan.com';
+    const base = import.meta.env.VITE_POLYGONSCAN_URL || 'https://amoy.polygonscan.com';
     return `${base}/${type}/${value}`;
 }

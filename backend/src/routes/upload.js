@@ -3,8 +3,33 @@ const multer = require("multer");
 const crypto = require("crypto");
 const router = express.Router();
 
+const { analyzeDocumentFingerprint } = require("../services/ocrFingerprint");
 const { uploadToPinata } = require("../services/pinata");
+const {
+    finalizeFingerprintReservation,
+    reserveFingerprint,
+    rollbackFingerprintReservation,
+} = require("../services/supabaseFingerprints");
 const Document = require("../models/Document");
+
+const DOCUMENT_SECTIONS = new Set([
+    "property-paper",
+    "affidavit",
+    "court-order",
+    "personal-document",
+]);
+
+function normalizeDocumentSection(value) {
+    const normalized = String(value || "personal-document").trim().toLowerCase();
+    if (!DOCUMENT_SECTIONS.has(normalized)) {
+        const error = new Error(
+            "Invalid document section. Use property-paper, affidavit, court-order, or personal-document."
+        );
+        error.status = 400;
+        throw error;
+    }
+    return normalized;
+}
 
 // Multer: memory storage, 20 MB limit, allowed MIME types
 const ALLOWED_MIMES = ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"];
@@ -27,50 +52,96 @@ const upload = multer({
     },
 });
 
+async function saveConfirmedDocumentMetadata({
+    hash,
+    cid,
+    owner,
+    filename,
+    fileType,
+    fileSizeBytes,
+    documentSection,
+    pinataUrl,
+    ipfsUrl,
+    txHash,
+}) {
+    if (!process.env.MONGODB_URI || !owner) {
+        return;
+    }
+
+    try {
+        await Document.findOneAndUpdate(
+            { hash },
+            {
+                $set: {
+                    cid,
+                    owner,
+                    filename,
+                    fileType,
+                    fileSizeBytes,
+                    documentSection,
+                    pinataUrl,
+                    ipfsUrl,
+                    txHash,
+                },
+            },
+            {
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true,
+            }
+        );
+    } catch (dbErr) {
+        console.warn("DB save failed:", dbErr.message);
+    }
+}
+
 /**
  * POST /upload
  * Accepts a multipart file, computes SHA-256 hash, uploads to IPFS via Pinata.
  * Returns: { success, hash, cid, pinataUrl, filename, fileType, fileSizeBytes }
  */
 router.post("/", upload.single("file"), async (req, res, next) => {
+    let reservationId = null;
+
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, error: "No file provided" });
         }
 
         const { buffer, originalname, mimetype, size } = req.file;
+        const documentSection = normalizeDocumentSection(req.body.documentSection);
 
         // Compute SHA-256 hash server-side (same algorithm as front-end Web Crypto API)
         const hashBuffer = crypto.createHash("sha256").update(buffer).digest();
         const hashHex = "0x" + hashBuffer.toString("hex");
         const hashBytes32 = "0x" + hashBuffer.toString("hex"); // 32 bytes = 64 hex chars
 
+        // Analyze document text and reserve a global duplicate fingerprint.
+        const fingerprint = await analyzeDocumentFingerprint(buffer, mimetype);
+        const reservation = await reserveFingerprint({
+            contentHash: fingerprint.contentHash,
+            extractionMethod: fingerprint.extractionMethod,
+            sourceMimeType: mimetype,
+            fileHash: hashHex,
+            fileSizeBytes: size,
+            documentSection,
+        });
+
+        if (reservation.duplicate) {
+            const duplicateError = new Error(
+                "A document with the same extracted critical content already exists in the vault."
+            );
+            duplicateError.status = 409;
+            throw duplicateError;
+        }
+
+        reservationId = reservation.reservation.id;
+
         // Upload to Pinata IPFS
         const { cid, pinataUrl, ipfsUrl } = await uploadToPinata(buffer, originalname, {
             hash: hashHex,
             fileType: mimetype,
         });
-
-        // Optional: save metadata to MongoDB
-        const owner = (req.body.owner || "").toLowerCase();
-        if (process.env.MONGODB_URI && owner) {
-            try {
-                const doc = new Document({
-                    hash: hashHex,
-                    cid,
-                    owner,
-                    filename: originalname,
-                    fileType: mimetype,
-                    fileSizeBytes: size,
-                    pinataUrl,
-                    ipfsUrl,
-                });
-                await doc.save();
-            } catch (dbErr) {
-                // Non-fatal: log and continue
-                console.warn("DB save failed:", dbErr.message);
-            }
-        }
 
         res.json({
             success: true,
@@ -81,7 +152,86 @@ router.post("/", upload.single("file"), async (req, res, next) => {
             filename: originalname,
             fileType: mimetype,
             fileSizeBytes: size,
+            reservationId,
+            contentHash: fingerprint.contentHash,
+            fingerprintMethod: fingerprint.extractionMethod,
+            documentSection,
         });
+    } catch (err) {
+        if (reservationId) {
+            try {
+                await rollbackFingerprintReservation(reservationId);
+            } catch (rollbackErr) {
+                console.warn("Duplicate reservation rollback failed:", rollbackErr.message);
+            }
+        }
+        next(err);
+    }
+});
+
+router.post("/finalize", express.json(), async (req, res, next) => {
+    try {
+        const {
+            reservationId,
+            txHash,
+            cid,
+            owner,
+            fileHash,
+            filename,
+            fileType,
+            fileSizeBytes,
+            documentSection,
+            pinataUrl,
+            ipfsUrl,
+        } = req.body;
+
+        if (!reservationId || !txHash || !cid || !owner || !fileHash) {
+            return res.status(400).json({
+                success: false,
+                error: "reservationId, txHash, cid, owner, and fileHash are required",
+            });
+        }
+
+        const normalizedOwner = owner.toLowerCase();
+        const normalizedDocumentSection = normalizeDocumentSection(documentSection);
+
+        const fingerprintRecord = await finalizeFingerprintReservation({
+            reservationId,
+        });
+
+        await saveConfirmedDocumentMetadata({
+            hash: fileHash,
+            cid,
+            owner: normalizedOwner,
+            filename,
+            fileType,
+            fileSizeBytes,
+            documentSection: normalizedDocumentSection,
+            pinataUrl,
+            ipfsUrl,
+            txHash,
+        });
+
+        res.json({
+            success: true,
+            reservationId,
+            contentHash: fingerprintRecord.content_hash,
+            documentSection: normalizedDocumentSection,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post("/rollback", express.json(), async (req, res, next) => {
+    try {
+        const { reservationId } = req.body;
+        if (!reservationId) {
+            return res.status(400).json({ success: false, error: "reservationId is required" });
+        }
+
+        await rollbackFingerprintReservation(reservationId);
+        res.json({ success: true, reservationId });
     } catch (err) {
         next(err);
     }

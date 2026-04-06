@@ -7,8 +7,9 @@ import { useWallet } from './hooks/useWallet';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './pages/LandingPage';
 import { Dashboard } from './pages/Dashboard';
+import { AuthorityPortal } from './pages/AuthorityPortal';
 
-type Page = 'landing' | 'dashboard';
+type Page = 'landing' | 'dashboard' | 'authority';
 
 function App() {
   const [page, setPage] = useState<Page>('landing');
@@ -39,10 +40,11 @@ function App() {
             <LandingPage
               onLaunch={() => navigate('dashboard')}
               onConnect={wallet.connect}
+              onAddAmoyNetwork={wallet.switchToAmoy}
               isConnected={wallet.isConnected}
             />
           </motion.div>
-        ) : (
+        ) : page === 'dashboard' ? (
           <motion.div
             key="dashboard"
             initial={{ opacity: 0 }}
@@ -57,12 +59,32 @@ function App() {
               signer={wallet.signer}
               provider={wallet.provider}
               onConnectWallet={wallet.connect}
+              onAddAmoyNetwork={wallet.switchToAmoy}
               isWrongNetwork={wallet.isWrongNetwork}
-              switchToMumbai={wallet.switchToMumbai}
+              switchToAmoy={wallet.switchToAmoy}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="authority"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <AuthorityPortal
+              address={wallet.address}
+              signer={wallet.signer}
+              isConnected={wallet.isConnected}
+              onConnectWallet={wallet.connect}
+              onAddAmoyNetwork={wallet.switchToAmoy}
+              isWrongNetwork={wallet.isWrongNetwork}
+              switchToAmoy={wallet.switchToAmoy}
             />
           </motion.div>
         )}
       </AnimatePresence>
+
 
       <ToastContainer
         position="bottom-right"

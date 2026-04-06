@@ -1,3 +1,5 @@
+import type { DocumentSection } from '../utils/documentSections';
+
 // TypeScript types for SynergyVault
 
 export interface Document {
@@ -13,6 +15,7 @@ export interface Document {
     pinataUrl?: string;
     ipfsUrl?: string;
     txHash?: string;
+    documentSection?: DocumentSection | string;
 }
 
 export interface UploadResponse {
@@ -24,6 +27,10 @@ export interface UploadResponse {
     filename: string;
     fileType: string;
     fileSizeBytes: number;
+    reservationId?: string;
+    contentHash?: string;
+    fingerprintMethod?: string;
+    documentSection?: DocumentSection | string;
     error?: string;
 }
 
@@ -48,6 +55,20 @@ export interface DocumentsResponse {
     documents: Document[];
 }
 
+export interface AccessGrant {
+    id: string;
+    owner_wallet: string;
+    grantee_wallet: string;
+    scope: string;
+    status: 'active' | 'revoked';
+    grant_message: string;
+    grant_signature: string;
+    expires_at: string;
+    revoked_at?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export type WalletState = {
     address: string | null;
     chainId: number | null;
@@ -62,7 +83,7 @@ export type UploadState =
     | { status: 'uploading-ipfs' }
     | { status: 'pending-tx'; hash: string; cid: string }
     | { status: 'confirming-tx'; txHash: string; hash: string; cid: string }
-    | { status: 'success'; txHash: string; hash: string; cid: string; pinataUrl: string }
+    | { status: 'success'; txHash: string; hash: string; cid: string; pinataUrl: string; documentSection?: DocumentSection | string }
     | { status: 'error'; error: string };
 
 export type VerifyState =
@@ -74,8 +95,12 @@ export type VerifyState =
     | { status: 'not-found'; hash: string }
     | { status: 'error'; error: string };
 
-export const SUPPORTED_CHAIN_ID = Number(import.meta.env.VITE_NETWORK_CHAIN_ID || 80001);
-export const POLYGONSCAN_URL = import.meta.env.VITE_POLYGONSCAN_URL || 'https://mumbai.polygonscan.com';
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const rawBackendUrl = import.meta.env.VITE_BACKEND_URL?.trim() || '';
+
+// In Vite dev, use the local proxy so frontend port changes do not break CORS.
+export const BACKEND_URL = import.meta.env.DEV ? '' : rawBackendUrl.replace(/\/$/, '');
+
+export const SUPPORTED_CHAIN_ID = Number(import.meta.env.VITE_NETWORK_CHAIN_ID || 80002);
+export const POLYGONSCAN_URL = import.meta.env.VITE_POLYGONSCAN_URL || 'https://amoy.polygonscan.com';
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '';
 export const IPFS_GATEWAY = import.meta.env.VITE_IPFS_GATEWAY || 'https://gateway.pinata.cloud/ipfs/';
